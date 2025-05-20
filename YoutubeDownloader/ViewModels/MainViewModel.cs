@@ -12,6 +12,9 @@ using YoutubeDownloader.ViewModels.Components;
 
 namespace YoutubeDownloader.ViewModels;
 
+/// <summary>
+/// 主视图模型，负责应用程序的主要功能和初始化流程
+/// </summary>
 public partial class MainViewModel(
     ViewModelManager viewModelManager,
     DialogManager dialogManager,
@@ -20,10 +23,37 @@ public partial class MainViewModel(
     UpdateService updateService
 ) : ViewModelBase
 {
+    /// <summary>
+    /// 获取应用程序标题，包含程序名称和版本号
+    /// </summary>
     public string Title { get; } = $"{Program.Name} v{Program.VersionString}";
 
+    /// <summary>
+    /// 获取仪表板视图模型，用于处理下载和查询功能
+    /// </summary>
     public DashboardViewModel Dashboard { get; } = viewModelManager.CreateDashboardViewModel();
 
+    /// <summary>
+    /// 释放资源并执行清理操作
+    /// </summary>
+    /// <param name="disposing">是否正在释放托管资源</param>
+    protected override void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            // 保存设置
+            settingsService.Save();
+
+            // 完成待处理的更新
+            updateService.FinalizeUpdate(false);
+        }
+
+        base.Dispose(disposing);
+    }
+
+    /// <summary>
+    /// 显示乌克兰支持信息对话框
+    /// </summary>
     private async Task ShowUkraineSupportMessageAsync()
     {
         if (!settingsService.IsUkraineSupportMessageEnabled)
@@ -40,7 +70,7 @@ public partial class MainViewModel(
             "CLOSE"
         );
 
-        // Disable this message in the future
+        // 禁用此消息在未来显示
         settingsService.IsUkraineSupportMessageEnabled = false;
         settingsService.Save();
 
@@ -48,12 +78,15 @@ public partial class MainViewModel(
             ProcessEx.StartShellExecute("https://tyrrrz.me/ukraine?source=youtubedownloader");
     }
 
+    /// <summary>
+    /// 显示开发版本警告对话框
+    /// </summary>
     private async Task ShowDevelopmentBuildMessageAsync()
     {
         if (!Program.IsDevelopmentBuild)
             return;
 
-        // If debugging, the user is likely a developer
+        // 如果正在调试，用户可能是开发人员
         if (Debugger.IsAttached)
             return;
 
@@ -74,6 +107,9 @@ public partial class MainViewModel(
             ProcessEx.StartShellExecute(Program.ProjectReleasesUrl);
     }
 
+    /// <summary>
+    /// 检查FFmpeg是否可用，如果不可用则显示警告对话框
+    /// </summary>
     private async Task ShowFFmpegMessageAsync()
     {
         if (FFmpeg.IsAvailable())
@@ -99,6 +135,9 @@ public partial class MainViewModel(
             Environment.Exit(3);
     }
 
+    /// <summary>
+    /// 检查应用程序更新并下载
+    /// </summary>
     private async Task CheckForUpdatesAsync()
     {
         try
@@ -124,11 +163,14 @@ public partial class MainViewModel(
         }
         catch
         {
-            // Failure to update shouldn't crash the application
+            // 更新失败不应导致应用程序崩溃
             snackbarManager.Notify("Failed to perform application update");
         }
     }
 
+    /// <summary>
+    /// 初始化应用程序，显示必要的对话框并检查更新
+    /// </summary>
     [RelayCommand]
     private async Task InitializeAsync()
     {
@@ -136,19 +178,5 @@ public partial class MainViewModel(
         await ShowDevelopmentBuildMessageAsync();
         await ShowFFmpegMessageAsync();
         await CheckForUpdatesAsync();
-    }
-
-    protected override void Dispose(bool disposing)
-    {
-        if (disposing)
-        {
-            // Save settings
-            settingsService.Save();
-
-            // Finalize pending updates
-            updateService.FinalizeUpdate(false);
-        }
-
-        base.Dispose(disposing);
     }
 }

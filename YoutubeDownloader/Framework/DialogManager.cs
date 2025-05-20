@@ -47,24 +47,37 @@ public class DialogManager : IDisposable
         }
     }
 
+    /// <summary>
+    /// 显示文件保存对话框，让用户选择文件保存位置和名称
+    /// </summary>
+    /// <param name="fileTypes">可选的文件类型过滤器列表，用于限制可选择的文件类型</param>
+    /// <param name="defaultFilePath">默认的文件路径和名称，作为初始建议值</param>
+    /// <returns>用户选择的文件路径，如果用户取消则返回null</returns>
     public async Task<string?> PromptSaveFilePathAsync(
         IReadOnlyList<FilePickerFileType>? fileTypes = null,
         string defaultFilePath = ""
     )
     {
+        // 获取应用程序的顶级视觉元素，用于显示对话框
+        // 如果找不到顶级元素，则抛出异常
         var topLevel =
             Application.Current?.ApplicationLifetime?.TryGetTopLevel()
             ?? throw new ApplicationException("Could not find the top-level visual element.");
 
+        // 使用Avalonia的存储提供器API显示保存文件对话框
         var file = await topLevel.StorageProvider.SaveFilePickerAsync(
             new FilePickerSaveOptions
             {
+                // 设置可选择的文件类型
                 FileTypeChoices = fileTypes,
+                // 设置建议的文件名
                 SuggestedFileName = defaultFilePath,
+                // 设置默认文件扩展名（从defaultFilePath中提取并去除前导点）
                 DefaultExtension = Path.GetExtension(defaultFilePath).TrimStart('.'),
             }
         );
 
+        // 返回用户选择的文件路径，如果用户取消则返回null
         return file?.Path.LocalPath;
     }
 

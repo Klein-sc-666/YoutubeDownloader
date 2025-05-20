@@ -19,6 +19,9 @@ using YoutubeExplode.Exceptions;
 
 namespace YoutubeDownloader.ViewModels.Components;
 
+/// <summary>
+/// 仪表板视图模型，负责处理YouTube视频的查询、解析和下载
+/// </summary>
 public partial class DashboardViewModel : ViewModelBase
 {
     private readonly ViewModelManager _viewModelManager;
@@ -30,6 +33,9 @@ public partial class DashboardViewModel : ViewModelBase
     private readonly ResizableSemaphore _downloadSemaphore = new();
     private readonly AutoResetProgressMuxer _progressMuxer;
 
+    /// <summary>
+    /// 初始化仪表板视图模型
+    /// </summary>
     public DashboardViewModel(
         ViewModelManager viewModelManager,
         SnackbarManager snackbarManager,
@@ -42,8 +48,10 @@ public partial class DashboardViewModel : ViewModelBase
         _dialogManager = dialogManager;
         _settingsService = settingsService;
 
+        // 创建自动重置的进度多路复用器
         _progressMuxer = Progress.CreateMuxer().WithAutoReset();
 
+        // 监听并应用并行下载限制设置的变化
         _eventRoot.Add(
             _settingsService.WatchProperty(
                 o => o.ParallelLimit,
@@ -52,6 +60,7 @@ public partial class DashboardViewModel : ViewModelBase
             )
         );
 
+        // 监听进度变化以更新进度指示器状态
         _eventRoot.Add(
             Progress.WatchProperty(
                 o => o.Current,
@@ -60,6 +69,9 @@ public partial class DashboardViewModel : ViewModelBase
         );
     }
 
+    /// <summary>
+    /// 指示是否正在处理操作
+    /// </summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsProgressIndeterminate))]
     [NotifyCanExecuteChangedFor(nameof(ProcessQueryCommand))]
@@ -67,28 +79,57 @@ public partial class DashboardViewModel : ViewModelBase
     [NotifyCanExecuteChangedFor(nameof(ShowSettingsCommand))]
     public partial bool IsBusy { get; set; }
 
+    /// <summary>
+    /// 进度容器，用于跟踪和显示操作进度
+    /// </summary>
     public ProgressContainer<Percentage> Progress { get; } = new();
 
+    /// <summary>
+    /// 指示进度是否为不确定状态
+    /// </summary>
     public bool IsProgressIndeterminate => IsBusy && Progress.Current.Fraction is <= 0 or >= 1;
 
+    /// <summary>
+    /// 用户输入的查询字符串
+    /// </summary>
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(ProcessQueryCommand))]
     public partial string? Query { get; set; }
 
+    /// <summary>
+    /// 下载任务集合
+    /// </summary>
     public ObservableCollection<DownloadViewModel> Downloads { get; } = [];
 
+    /// <summary>
+    /// 检查是否可以显示认证设置
+    /// </summary>
     private bool CanShowAuthSetup() => !IsBusy;
 
+    /// <summary>
+    /// 显示认证设置对话框
+    /// </summary>
     [RelayCommand(CanExecute = nameof(CanShowAuthSetup))]
     private async Task ShowAuthSetupAsync() =>
         await _dialogManager.ShowDialogAsync(_viewModelManager.CreateAuthSetupViewModel());
 
+    /// <summary>
+    /// 检查是否可以显示设置
+    /// </summary>
     private bool CanShowSettings() => !IsBusy;
 
+    /// <summary>
+    /// 显示设置对话框
+    /// </summary>
     [RelayCommand(CanExecute = nameof(CanShowSettings))]
     private async Task ShowSettingsAsync() =>
         await _dialogManager.ShowDialogAsync(_viewModelManager.CreateSettingsViewModel());
 
+    /// <summary>
+    /// 将下载任务添加到队列并开始下载
+    /// </summary>
+    /// <param name="download">下载视图模型</param>
+    /// <param name="position">在队列中的位置，默认为0（队列开头）</param>
     private async void EnqueueDownload(DownloadViewModel download, int position = 0)
     {
         Downloads.Insert(position, download);
@@ -99,10 +140,12 @@ public partial class DashboardViewModel : ViewModelBase
             var downloader = new VideoDownloader(_settingsService.LastAuthCookies);
             var tagInjector = new MediaTagInjector();
 
+            // 获取下载信号量，限制并行下载数量
             using var access = await _downloadSemaphore.AcquireAsync(download.CancellationToken);
 
             download.Status = DownloadStatus.Started;
 
+            // 获取最佳下载选项（如果尚未指定）
             var downloadOption =
                 download.DownloadOption
                 ?? await downloader.GetBestDownloadOptionAsync(
@@ -112,6 +155,7 @@ public partial class DashboardViewModel : ViewModelBase
                     download.CancellationToken
                 );
 
+            // 执行视频下载
             await downloader.DownloadVideoAsync(
                 download.FilePath!,
                 download.Video!,
@@ -121,6 +165,7 @@ public partial class DashboardViewModel : ViewModelBase
                 download.CancellationToken
             );
 
+            // 如果设置了注入标签，则注入媒体标签
             if (_settingsService.ShouldInjectTags)
             {
                 try
@@ -133,7 +178,7 @@ public partial class DashboardViewModel : ViewModelBase
                 }
                 catch
                 {
-                    // Media tagging is not critical
+                    // 媒体标签注入不是关键操作，失败可以忽略
                 }
             }
 
@@ -143,30 +188,38 @@ public partial class DashboardViewModel : ViewModelBase
         {
             try
             {
-                // Delete the incompletely downloaded file
+                // 删除未完成的下载文件
                 if (!string.IsNullOrWhiteSpace(download.FilePath))
                     File.Delete(download.FilePath);
             }
             catch
             {
-                // Ignore
+                // 忽略删除文件时的错误
             }
 
+            // 根据异常类型设置下载状态
             download.Status =
                 ex is OperationCanceledException ? DownloadStatus.Canceled : DownloadStatus.Failed;
 
-            // Short error message for YouTube-related errors, full for others
+            // YouTube相关错误显示简短消息，其他错误显示完整堆栈
             download.ErrorMessage = ex is YoutubeExplodeException ? ex.Message : ex.ToString();
         }
         finally
         {
+            // 报告进度完成并释放资源
             progress.ReportCompletion();
             download.Dispose();
         }
     }
 
+    /// <summary>
+    /// 检查是否可以处理查询
+    /// </summary>
     private bool CanProcessQuery() => !IsBusy && !string.IsNullOrWhiteSpace(Query);
 
+    /// <summary>
+    /// 处理用户输入的查询，解析并准备下载
+    /// </summary>
     [RelayCommand(CanExecute = nameof(CanProcessQuery))]
     private async Task ProcessQueryAsync()
     {
@@ -175,7 +228,7 @@ public partial class DashboardViewModel : ViewModelBase
 
         IsBusy = true;
 
-        // Small weight so as to not offset any existing download operations
+        // 小权重，以不影响现有下载操作
         var progress = _progressMuxer.CreateInput(0.01);
 
         try
@@ -183,13 +236,13 @@ public partial class DashboardViewModel : ViewModelBase
             var resolver = new QueryResolver(_settingsService.LastAuthCookies);
             var downloader = new VideoDownloader(_settingsService.LastAuthCookies);
 
-            // Split queries by newlines
+            // 按换行符分割查询
             var queries = Query.Split(
                 '\n',
                 StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries
             );
 
-            // Process individual queries
+            // 处理单个查询
             var queryResults = new List<QueryResult>();
             foreach (var (i, query) in queries.Index())
             {
@@ -197,9 +250,8 @@ public partial class DashboardViewModel : ViewModelBase
                 {
                     queryResults.Add(await resolver.ResolveAsync(query));
                 }
-                // If it's not the only query in the list, don't interrupt the process
-                // and report the error via an async notification instead of a sync dialog.
-                // https://github.com/Tyrrrz/YoutubeDownloader/issues/563
+                // 如果不是列表中唯一的查询，不中断处理过程
+                // 通过异步通知而不是同步对话框报告错误
                 catch (YoutubeExplodeException ex)
                     when (ex is VideoUnavailableException or PlaylistUnavailableException
                         && queries.Length > 1
@@ -211,10 +263,10 @@ public partial class DashboardViewModel : ViewModelBase
                 progress.Report(Percentage.FromFraction((i + 1.0) / queries.Length));
             }
 
-            // Aggregate results
+            // 聚合结果
             var queryResult = QueryResult.Aggregate(queryResults);
 
-            // Single video result
+            // 单个视频结果
             if (queryResult.Videos.Count == 1)
             {
                 var video = queryResult.Videos.Single();
@@ -235,14 +287,14 @@ public partial class DashboardViewModel : ViewModelBase
 
                 Query = "";
             }
-            // Multiple videos
+            // 多个视频
             else if (queryResult.Videos.Count > 1)
             {
                 var downloads = await _dialogManager.ShowDialogAsync(
                     _viewModelManager.CreateDownloadMultipleSetupViewModel(
                         queryResult.Title,
                         queryResult.Videos,
-                        // Pre-select videos if they come from a single query and not from search
+                        // 如果视频来自单个查询而非搜索，则预选视频
                         queryResult.Kind
                             is not QueryResultKind.Search
                                 and not QueryResultKind.Aggregate
@@ -257,7 +309,7 @@ public partial class DashboardViewModel : ViewModelBase
 
                 Query = "";
             }
-            // No videos found
+            // 未找到视频
             else
             {
                 await _dialogManager.ShowDialogAsync(
@@ -273,7 +325,7 @@ public partial class DashboardViewModel : ViewModelBase
             await _dialogManager.ShowDialogAsync(
                 _viewModelManager.CreateMessageBoxViewModel(
                     "Error",
-                    // Short error message for YouTube-related errors, full for others
+                    // YouTube相关错误显示简短消息，其他错误显示完整堆栈
                     ex is YoutubeExplodeException
                         ? ex.Message
                         : ex.ToString()
@@ -287,6 +339,9 @@ public partial class DashboardViewModel : ViewModelBase
         }
     }
 
+    /// <summary>
+    /// 从下载队列中移除下载任务
+    /// </summary>
     private void RemoveDownload(DownloadViewModel download)
     {
         Downloads.Remove(download);
@@ -294,6 +349,9 @@ public partial class DashboardViewModel : ViewModelBase
         download.Dispose();
     }
 
+    /// <summary>
+    /// 移除所有已成功完成的下载任务
+    /// </summary>
     [RelayCommand]
     private void RemoveSuccessfulDownloads()
     {
@@ -304,6 +362,9 @@ public partial class DashboardViewModel : ViewModelBase
         }
     }
 
+    /// <summary>
+    /// 移除所有非活动状态的下载任务（已完成、失败或取消）
+    /// </summary>
     [RelayCommand]
     private void RemoveInactiveDownloads()
     {
@@ -319,12 +380,16 @@ public partial class DashboardViewModel : ViewModelBase
         }
     }
 
+    /// <summary>
+    /// 重新启动指定的下载任务
+    /// </summary>
     [RelayCommand]
     private void RestartDownload(DownloadViewModel download)
     {
         var position = Math.Max(0, Downloads.IndexOf(download));
         RemoveDownload(download);
 
+        // 根据下载选项或下载偏好创建新的下载任务
         var newDownload = download.DownloadOption is not null
             ? _viewModelManager.CreateDownloadViewModel(
                 download.Video!,
@@ -340,6 +405,9 @@ public partial class DashboardViewModel : ViewModelBase
         EnqueueDownload(newDownload, position);
     }
 
+    /// <summary>
+    /// 重新启动所有失败的下载任务
+    /// </summary>
     [RelayCommand]
     private void RestartFailedDownloads()
     {
@@ -350,6 +418,9 @@ public partial class DashboardViewModel : ViewModelBase
         }
     }
 
+    /// <summary>
+    /// 取消所有下载任务
+    /// </summary>
     [RelayCommand]
     private void CancelAllDownloads()
     {
@@ -357,6 +428,10 @@ public partial class DashboardViewModel : ViewModelBase
             download.CancelCommand.Execute(null);
     }
 
+    /// <summary>
+    /// 释放资源并执行清理操作
+    /// </summary>
+    /// <param name="disposing">是否正在释放托管资源</param>
     protected override void Dispose(bool disposing)
     {
         if (disposing)

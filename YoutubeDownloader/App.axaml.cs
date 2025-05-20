@@ -18,14 +18,35 @@ using YoutubeDownloader.Views;
 
 namespace YoutubeDownloader;
 
+/// <summary>
+/// 应用程序主类，负责初始化应用程序、管理依赖注入和主题设置
+/// 实现IDisposable接口以确保资源正确释放
+/// </summary>
 public class App : Application, IDisposable
 {
+    /// <summary>
+    /// 事件订阅收集器，用于管理和清理事件订阅
+    /// </summary>
     private readonly DisposableCollector _eventRoot = new();
 
+    /// <summary>
+    /// 依赖注入服务提供者
+    /// </summary>
     private readonly ServiceProvider _services;
+
+    /// <summary>
+    /// 应用程序设置服务
+    /// </summary>
     private readonly SettingsService _settingsService;
+
+    /// <summary>
+    /// 主视图模型
+    /// </summary>
     private readonly MainViewModel _mainViewModel;
 
+    /// <summary>
+    /// 构造函数，初始化依赖注入和应用程序服务
+    /// </summary>
     public App()
     {
         var services = new ServiceCollection();
@@ -73,6 +94,9 @@ public class App : Application, IDisposable
         );
     }
 
+    /// <summary>
+    /// 初始化应用程序
+    /// </summary>
     public override void Initialize()
     {
         base.Initialize();
@@ -80,6 +104,9 @@ public class App : Application, IDisposable
         AvaloniaXamlLoader.Load(this);
     }
 
+    /// <summary>
+    /// 注册应用程序服务
+    /// </summary>
     public override void RegisterServices()
     {
         base.RegisterServices();
@@ -87,6 +114,9 @@ public class App : Application, IDisposable
         AvaloniaWebViewBuilder.Initialize(config => config.IsInPrivateModeEnabled = true);
     }
 
+    /// <summary>
+    /// 初始化应用程序主题
+    /// </summary>
     private void InitializeTheme()
     {
         var actualTheme = RequestedThemeVariant?.Key switch
@@ -102,6 +132,9 @@ public class App : Application, IDisposable
                 : Theme.Create(Theme.Dark, Color.Parse("#E8E8E8"), Color.Parse("#F9A825"));
     }
 
+    /// <summary>
+    /// 框架初始化完成后的回调方法
+    /// </summary>
     public override void OnFrameworkInitializationCompleted()
     {
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
@@ -116,10 +149,16 @@ public class App : Application, IDisposable
         _settingsService.Load();
     }
 
+    /// <summary>
+    /// 系统主题变更事件处理方法
+    /// </summary>
     private void Application_OnActualThemeVariantChanged(object? sender, EventArgs args) =>
         // Re-initialize the theme when the system theme changes
         InitializeTheme();
 
+    /// <summary>
+    /// 释放资源
+    /// </summary>
     public void Dispose()
     {
         _eventRoot.Dispose();
